@@ -1,51 +1,17 @@
-#include <string.h>
-#include "esp_err.h"
-#include "cJSON.h"
-#include "esp_timer.h"
-#include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "freertos/event_groups.h"
-#include "esp_system.h"
-#include "esp_wifi.h"
+#include "esp_err.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_wifi.h"
 #include "nvs_flash.h"
-#include "esp_http_server.h"
-#include "esp_camera.h"
+#include "camera.h"
+#include "http.h"
 
 static const char *TAG = "bunny-cam";
 
-/* WiFi event group -- bit 0 set when connected */
 static EventGroupHandle_t wifi_events;
 #define WIFI_CONNECTED_BIT BIT0
-
-/* AI Thinker ESP32-CAM pin assignments */
-static const camera_config_t camera_config = {
-    .pin_pwdn     = 32,
-    .pin_reset    = -1,
-    .pin_xclk     = 0,
-    .pin_sccb_sda = 26,
-    .pin_sccb_scl = 27,
-    .pin_d7       = 35,
-    .pin_d6       = 34,
-    .pin_d5       = 39,
-    .pin_d4       = 36,
-    .pin_d3       = 21,
-    .pin_d2       = 19,
-    .pin_d1       = 18,
-    .pin_d0       = 5,
-    .pin_vsync    = 25,
-    .pin_href     = 23,
-    .pin_pclk     = 22,
-    .xclk_freq_hz = 20000000,
-    .ledc_timer   = LEDC_TIMER_0,
-    .ledc_channel = LEDC_CHANNEL_0,
-    .pixel_format = PIXFORMAT_JPEG,
-    .frame_size   = FRAMESIZE_VGA,
-    .jpeg_quality = 12,
-    .fb_count     = 1,
-};
 
 static void wifi_event_handler(void *arg, esp_event_base_t base,
                                int32_t id, void *data)
@@ -93,73 +59,6 @@ static void wifi_init(void)
                         pdFALSE, pdTRUE, portMAX_DELAY);
 }
 
-static esp_err_t status_handler(httpd_req_t *req)
-{
-    wifi_ap_record_t ap;
-    esp_wifi_sta_get_ap_info(&ap);
-
-    const esp_app_desc_t *app = esp_app_get_description();
-    char build_timestamp[32];
-    snprintf(build_timestamp, sizeof(build_timestamp), "%s %s", app->date, app->time);
-
-    cJSON *root = cJSON_CreateObject();
-    cJSON_AddStringToObject(root, "build_timestamp",  build_timestamp);
-    cJSON_AddNumberToObject(root, "uptime_s",        esp_timer_get_time() / 1000000);
-    cJSON_AddNumberToObject(root, "free_heap",       esp_get_free_heap_size());
-    cJSON_AddNumberToObject(root, "min_free_heap",   esp_get_minimum_free_heap_size());
-    cJSON_AddNumberToObject(root, "rssi",            ap.rssi);
-    cJSON_AddNumberToObject(root, "wifi_channel",    ap.primary);
-
-    char *json = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
-
-    httpd_resp_set_type(req, "application/json");
-    esp_err_t err = httpd_resp_sendstr(req, json);
-    free(json);
-    return err;
-}
-
-static esp_err_t image_handler(httpd_req_t *req)
-{
-    camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb) {
-        ESP_LOGE(TAG, "Camera capture failed");
-        httpd_resp_send_500(req);
-        return ESP_FAIL;
-    }
-
-    httpd_resp_set_type(req, "image/jpeg");
-    httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
-    esp_err_t err = httpd_resp_send(req, (const char *)fb->buf, fb->len);
-
-    esp_camera_fb_return(fb);
-    return err;
-}
-
-static httpd_handle_t start_http_server(void)
-{
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    httpd_handle_t server;
-
-    ESP_ERROR_CHECK(httpd_start(&server, &config));
-
-    httpd_uri_t image_uri = {
-        .uri     = "/image",
-        .method  = HTTP_GET,
-        .handler = image_handler,
-    };
-    httpd_register_uri_handler(server, &image_uri);
-
-    httpd_uri_t status_uri = {
-        .uri     = "/status",
-        .method  = HTTP_GET,
-        .handler = status_handler,
-    };
-    httpd_register_uri_handler(server, &status_uri);
-
-    return server;
-}
-
 void app_main(void)
 {
     esp_err_t nvs_err = nvs_flash_init();
@@ -168,10 +67,10 @@ void app_main(void)
         nvs_err = nvs_flash_init();
     }
     ESP_ERROR_CHECK(nvs_err);
-    ESP_ERROR_CHECK(esp_camera_init(&camera_config));
 
+    camera_init();
     wifi_init();
-    start_http_server();
+    http_server_start();
 
     ESP_LOGI(TAG, "bunny-cam ready");
 }
