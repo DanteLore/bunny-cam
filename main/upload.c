@@ -39,6 +39,7 @@ static esp_err_t get_presigned_url(char *url_out, size_t url_out_len)
         .event_handler     = on_http_data,
         .user_data         = &response,
         .crt_bundle_attach = esp_crt_bundle_attach,
+        .timeout_ms        = 10000,
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -72,6 +73,7 @@ static esp_err_t put_image(const char *presigned_url, const uint8_t *data, size_
         .method            = HTTP_METHOD_PUT,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .buffer_size_tx    = 4096,
+        .timeout_ms        = 10000,
     };
 
     esp_http_client_handle_t client = esp_http_client_init(&config);

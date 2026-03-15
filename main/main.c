@@ -7,6 +7,7 @@
 #include "nvs_flash.h"
 #include "freertos/task.h"
 #include "esp_camera.h"
+#include "esp_task_wdt.h"
 #include "camera.h"
 #include "http.h"
 #include "upload.h"
@@ -64,6 +65,9 @@ static void wifi_init(void)
 
 static void upload_task(void *arg)
 {
+    /* 60s watchdog -- comfortably longer than the 30s cycle + 10s HTTP timeout */
+    esp_task_wdt_add(NULL);
+
     while (1) {
         camera_fb_t *fb = esp_camera_fb_get();
         if (!fb) {
@@ -72,6 +76,7 @@ static void upload_task(void *arg)
             upload_image(fb->buf, fb->len);
             esp_camera_fb_return(fb);
         }
+        esp_task_wdt_reset();
         vTaskDelay(pdMS_TO_TICKS(30000));
     }
 }
