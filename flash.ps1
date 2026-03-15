@@ -33,14 +33,28 @@ Get-Content $secretsFile | Where-Object { $_ -match "^\s*\w" } | ForEach-Object 
 $sdkconfig = Join-Path $PSScriptRoot "sdkconfig"
 if (Test-Path $sdkconfig) {
     $content = Get-Content $sdkconfig
-    $content = $content -replace 'CONFIG_WIFI_SSID=".*"', "CONFIG_WIFI_SSID=`"$($secrets['WIFI_SSID'])`""
-    $content = $content -replace 'CONFIG_WIFI_PASSWORD=".*"', "CONFIG_WIFI_PASSWORD=`"$($secrets['WIFI_PASSWORD'])`""
+    $replacements = @{
+        'CONFIG_WIFI_SSID'     = $secrets['WIFI_SSID']
+        'CONFIG_WIFI_PASSWORD' = $secrets['WIFI_PASSWORD']
+        'CONFIG_UPLOAD_SECRET' = $secrets['UPLOAD_SECRET']
+    }
+
+    foreach ($key in $replacements.Keys) {
+        $val = $replacements[$key]
+        if ($content -match "$key=") {
+            $content = $content -replace "$key=`".*`"", "$key=`"$val`""
+        } else {
+            $content += "$key=`"$val`""
+        }
+    }
+
     $content | Set-Content $sdkconfig
 } else {
     # sdkconfig does not exist yet -- write minimal seed so idf.py picks up credentials on first build
     @(
         "CONFIG_WIFI_SSID=`"$($secrets['WIFI_SSID'])`"",
-        "CONFIG_WIFI_PASSWORD=`"$($secrets['WIFI_PASSWORD'])`""
+        "CONFIG_WIFI_PASSWORD=`"$($secrets['WIFI_PASSWORD'])`"",
+        "CONFIG_UPLOAD_SECRET=`"$($secrets['UPLOAD_SECRET'])`""
     ) | Set-Content $sdkconfig
 }
 

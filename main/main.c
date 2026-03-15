@@ -5,8 +5,11 @@
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
+#include "freertos/task.h"
+#include "esp_camera.h"
 #include "camera.h"
 #include "http.h"
+#include "upload.h"
 
 static const char *TAG = "bunny-cam";
 
@@ -59,6 +62,20 @@ static void wifi_init(void)
                         pdFALSE, pdTRUE, portMAX_DELAY);
 }
 
+static void upload_task(void *arg)
+{
+    while (1) {
+        camera_fb_t *fb = esp_camera_fb_get();
+        if (!fb) {
+            ESP_LOGE(TAG, "Camera capture failed");
+        } else {
+            upload_image(fb->buf, fb->len);
+            esp_camera_fb_return(fb);
+        }
+        vTaskDelay(pdMS_TO_TICKS(30000));
+    }
+}
+
 void app_main(void)
 {
     esp_err_t nvs_err = nvs_flash_init();
@@ -71,6 +88,7 @@ void app_main(void)
     camera_init();
     wifi_init();
     http_server_start();
+    xTaskCreate(upload_task, "upload", 12288, NULL, 5, NULL);
 
     ESP_LOGI(TAG, "bunny-cam ready");
 }

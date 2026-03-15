@@ -12,4 +12,10 @@ menu "Bunny Cam"
         help
             Password for the WiFi network.
 
+    config UPLOAD_SECRET
+        string "Upload secret"
+        default ""
+        help
+            Shared secret for the webcam upload API.
+
 endmenu
