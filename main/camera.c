@@ -1,6 +1,13 @@
 #include "camera.h"
 #include "esp_camera.h"
 #include "esp_err.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#define WARMUP_FRAMES 3
+
+static const char *TAG = "bunny-cam-camera";
 
 /* AI Thinker ESP32-CAM pin assignments */
 static const camera_config_t camera_config = {
@@ -29,7 +36,44 @@ static const camera_config_t camera_config = {
     .fb_count     = 1,
 };
 
+static void apply_auto_adjustments(void)
+{
+    sensor_t *s = esp_camera_sensor_get();
+
+    /* Auto exposure -- AEC2 is the more advanced algorithm */
+    s->set_exposure_ctrl(s, 1);
+    s->set_aec2(s, 1);
+    s->set_ae_level(s, 0);
+
+    /* Auto gain -- high ceiling lets the sensor brighten low-light scenes */
+    s->set_gain_ctrl(s, 1);
+    s->set_gainceiling(s, GAINCEILING_8X);
+
+    /* Auto white balance -- handles daylight vs shade vs artificial light */
+    s->set_whitebal(s, 1);
+    s->set_awb_gain(s, 1);
+    s->set_wb_mode(s, 0);  /* 0 = auto */
+
+    /* Image quality corrections */
+    s->set_bpc(s, 1);      /* black pixel correction */
+    s->set_wpc(s, 1);      /* white pixel correction */
+    s->set_raw_gma(s, 1);  /* gamma correction */
+    s->set_lenc(s, 1);     /* lens shading correction */
+}
+
+static void discard_warmup_frames(void)
+{
+    for (int i = 0; i < WARMUP_FRAMES; i++) {
+        camera_fb_t *fb = esp_camera_fb_get();
+        if (fb) esp_camera_fb_return(fb);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    ESP_LOGI(TAG, "AE settled after %d warmup frames", WARMUP_FRAMES);
+}
+
 void camera_init(void)
 {
     ESP_ERROR_CHECK(esp_camera_init(&camera_config));
+    apply_auto_adjustments();
+    discard_warmup_frames();
 }
