@@ -9,9 +9,21 @@
 #include "cJSON.h"
 
 static const char *TAG = "bunny-cam-http";
+static int64_t last_activity_us = 0;
+
+int64_t http_last_activity_us(void)
+{
+    return last_activity_us;
+}
+
+static void note_activity(void)
+{
+    last_activity_us = esp_timer_get_time();
+}
 
 static esp_err_t status_handler(httpd_req_t *req)
 {
+    note_activity();
     wifi_ap_record_t ap;
     esp_wifi_sta_get_ap_info(&ap);
 
@@ -38,6 +50,7 @@ static esp_err_t status_handler(httpd_req_t *req)
 
 static esp_err_t image_handler(httpd_req_t *req)
 {
+    note_activity();
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb) {
         ESP_LOGE(TAG, "Camera capture failed");

@@ -1,87 +1,47 @@
 #include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
-#include "esp_err.h"
-#include "esp_event.h"
-#include "esp_log.h"
-#include "esp_netif.h"
-#include "esp_wifi.h"
-#include "nvs_flash.h"
 #include "freertos/task.h"
+#include "esp_err.h"
+#include "esp_log.h"
 #include "esp_camera.h"
-#include "esp_task_wdt.h"
+#include "esp_sleep.h"
+#include "esp_timer.h"
+#include "nvs_flash.h"
 #include "mdns.h"
 #include "camera.h"
 #include "http.h"
 #include "upload.h"
+#include "wifi.h"
+
+#define SLEEP_DURATION_US       (20LL * 1000000)
+#define UPLOAD_INTERVAL_US      (30LL * 1000000)
+#define BRIEF_AWAKE_WINDOW_US   (10LL * 1000000)
+#define API_ACTIVE_WINDOW_US    (120LL * 1000000)
 
 static const char *TAG = "bunny-cam";
 
-static EventGroupHandle_t wifi_events;
-#define WIFI_CONNECTED_BIT BIT0
-
-static void wifi_event_handler(void *arg, esp_event_base_t base,
-                               int32_t id, void *data)
+static bool should_stay_awake(int64_t awake_since_us)
 {
-    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGW(TAG, "WiFi disconnected, reconnecting...");
-        esp_wifi_connect();
-    } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t *event = (ip_event_got_ip_t *)data;
-        ESP_LOGI(TAG, "IP address: " IPSTR, IP2STR(&event->ip_info.ip));
-        xEventGroupSetBits(wifi_events, WIFI_CONNECTED_BIT);
+    int64_t now        = esp_timer_get_time();
+    int64_t last_hit   = http_last_activity_us();
+
+    if (last_hit > 0) {
+        /* API has been hit -- stay awake until 120s of inactivity */
+        return (now - last_hit) < API_ACTIVE_WINDOW_US;
     }
+
+    /* No API hit yet -- stay awake for brief window only */
+    return (now - awake_since_us) < BRIEF_AWAKE_WINDOW_US;
 }
 
-static void wifi_init(void)
+static void do_capture_and_upload(void)
 {
-    wifi_events = xEventGroupCreate();
-
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_t *netif = esp_netif_create_default_wifi_sta();
-    esp_netif_set_hostname(netif, "bunny-cam");
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                               wifi_event_handler, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
-                                               wifi_event_handler, NULL));
-
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid     = CONFIG_WIFI_SSID,
-            .password = CONFIG_WIFI_PASSWORD,
-        },
-    };
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
-    xEventGroupWaitBits(wifi_events, WIFI_CONNECTED_BIT,
-                        pdFALSE, pdTRUE, portMAX_DELAY);
-}
-
-static void upload_task(void *arg)
-{
-    /* 60s watchdog -- comfortably longer than the 30s cycle + 10s HTTP timeout */
-    esp_task_wdt_add(NULL);
-
-    while (1) {
-        camera_fb_t *fb = esp_camera_fb_get();
-        if (!fb) {
-            ESP_LOGE(TAG, "Camera capture failed");
-        } else {
-            upload_image(fb->buf, fb->len);
-            esp_camera_fb_return(fb);
-        }
-        esp_task_wdt_reset();
-        vTaskDelay(pdMS_TO_TICKS(30000));
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb) {
+        ESP_LOGE(TAG, "Camera capture failed");
+        return;
     }
+    upload_image(fb->buf, fb->len);
+    esp_camera_fb_return(fb);
 }
 
 void app_main(void)
@@ -95,13 +55,30 @@ void app_main(void)
 
     camera_init();
     wifi_init();
+    wifi_connect();
 
     ESP_ERROR_CHECK(mdns_init());
     mdns_hostname_set("bunny-cam");
     mdns_instance_name_set("Bunny Cam");
 
-    http_server_start();
-    xTaskCreate(upload_task, "upload", 12288, NULL, 5, NULL);
+    do_capture_and_upload();
 
+    http_server_start();
     ESP_LOGI(TAG, "bunny-cam ready");
+
+    int64_t awake_since_us   = esp_timer_get_time();
+    int64_t last_upload_us   = awake_since_us;
+
+    while (should_stay_awake(awake_since_us)) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        if ((esp_timer_get_time() - last_upload_us) >= UPLOAD_INTERVAL_US) {
+            do_capture_and_upload();
+            last_upload_us = esp_timer_get_time();
+        }
+    }
+
+    wifi_disconnect();
+    ESP_LOGI(TAG, "Going to sleep for %llds", SLEEP_DURATION_US / 1000000);
+    esp_deep_sleep(SLEEP_DURATION_US);
 }

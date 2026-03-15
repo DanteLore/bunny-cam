@@ -3,6 +3,9 @@ CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
+# Main task stack -- needs headroom for camera init, upload buffers, and HTTP client
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
 # Watchdog -- 60s covers the 30s upload cycle plus 10s HTTP timeout with headroom
 CONFIG_ESP_TASK_WDT_TIMEOUT_S=60
 
