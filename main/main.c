@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 #include "esp_camera.h"
 #include "esp_task_wdt.h"
+#include "mdns.h"
 #include "camera.h"
 #include "http.h"
 #include "upload.h"
@@ -92,6 +93,11 @@ void app_main(void)
 
     camera_init();
     wifi_init();
+
+    ESP_ERROR_CHECK(mdns_init());
+    mdns_hostname_set("bunny-cam");
+    mdns_instance_name_set("Bunny Cam");
+
     http_server_start();
     xTaskCreate(upload_task, "upload", 12288, NULL, 5, NULL);
 
