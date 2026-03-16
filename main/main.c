@@ -37,6 +37,8 @@ static bool should_stay_awake(int64_t awake_since_us)
 
 static void do_capture_and_upload(void)
 {
+    upload_status(esp_timer_get_time() / 1000000, battery_last_voltage());
+
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb) {
         ESP_LOGE(TAG, "Camera capture failed");

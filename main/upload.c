@@ -7,6 +7,8 @@
 
 #define UPLOAD_ENDPOINT \
     "https://cam.dantelore.com/upload?secret=" CONFIG_UPLOAD_SECRET "&camera_id=bunnycam"
+#define STATUS_ENDPOINT_BASE \
+    "https://cam.dantelore.com/status?secret=" CONFIG_UPLOAD_SECRET "&camera_id=bunnycam"
 
 /* S3 presigned URLs carry a large AWS Signature v4 query string */
 #define PRESIGNED_URL_MAX 2048
@@ -94,6 +96,32 @@ static esp_err_t put_image(const char *presigned_url, const uint8_t *data, size_
         return ESP_FAIL;
     }
 
+    return ESP_OK;
+}
+
+esp_err_t upload_status(int64_t uptime_s, float battery_v)
+{
+    char url[256];
+    snprintf(url, sizeof(url), STATUS_ENDPOINT_BASE "&uptime=%lld&battery_voltage=%.2f",
+             uptime_s, battery_v);
+
+    esp_http_client_config_t config = {
+        .url               = url,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .timeout_ms        = 10000,
+    };
+
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    esp_err_t err = esp_http_client_perform(client);
+    int status    = esp_http_client_get_status_code(client);
+    esp_http_client_cleanup(client);
+
+    if (err != ESP_OK || status != 200) {
+        ESP_LOGE(TAG, "GET /status failed: err=0x%x status=%d", err, status);
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Status uploaded (uptime=%llds battery=%.2fV)", uptime_s, battery_v);
     return ESP_OK;
 }
 
