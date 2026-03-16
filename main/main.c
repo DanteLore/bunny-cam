@@ -7,8 +7,10 @@
 #include "esp_timer.h"
 #include "nvs_flash.h"
 #include "mdns.h"
+#include "battery.h"
 #include "camera.h"
 #include "http.h"
+#include "led.h"
 #include "upload.h"
 #include "wifi.h"
 
@@ -53,6 +55,8 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(nvs_err);
 
+    led_init();
+    battery_read_and_cache();
     camera_init();
     wifi_init();
     wifi_connect();
@@ -64,6 +68,7 @@ void app_main(void)
     do_capture_and_upload();
 
     http_server_start();
+    led_on();
     ESP_LOGI(TAG, "bunny-cam ready");
 
     int64_t awake_since_us   = esp_timer_get_time();
@@ -78,6 +83,7 @@ void app_main(void)
         }
     }
 
+    led_off();
     wifi_disconnect();
     ESP_LOGI(TAG, "Going to sleep for %llds", SLEEP_DURATION_US / 1000000);
     esp_deep_sleep(SLEEP_DURATION_US);

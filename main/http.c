@@ -1,3 +1,4 @@
+#include "battery.h"
 #include "http.h"
 #include "esp_camera.h"
 #include "esp_err.h"
@@ -38,6 +39,7 @@ static esp_err_t status_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "min_free_heap",   esp_get_minimum_free_heap_size());
     cJSON_AddNumberToObject(root, "rssi",            ap.rssi);
     cJSON_AddNumberToObject(root, "wifi_channel",    ap.primary);
+    cJSON_AddNumberToObject(root, "battery_v",       battery_last_voltage());
 
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
