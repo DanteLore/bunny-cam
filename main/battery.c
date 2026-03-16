@@ -13,6 +13,10 @@
  * Ratio measured empirically: 12V battery -> 2.4V at ADC pin = 5.0x */
 #define VOLTAGE_DIVIDER_RATIO   5.0f
 
+/* ESP32 ADC reads ~3% high due to nonlinearity in the mid-range.
+ * Calibration factor derived from 3 measured vs reported readings (12-14V range). */
+#define CALIBRATION_FACTOR      0.970f
+
 #define NUM_SAMPLES             16
 
 static const char *TAG = "bunny-cam-battery";
@@ -49,7 +53,7 @@ void battery_read_and_cache(void)
     }
 
     float adc_v = (sum_mv / NUM_SAMPLES) / 1000.0f;
-    rtc_last_voltage = adc_v * VOLTAGE_DIVIDER_RATIO;
+    rtc_last_voltage = adc_v * VOLTAGE_DIVIDER_RATIO * CALIBRATION_FACTOR;
     ESP_LOGI(TAG, "Battery: %.2fV (ADC pin: %.3fV)", rtc_last_voltage, adc_v);
 
     ESP_ERROR_CHECK(adc_cali_delete_scheme_line_fitting(cali_handle));
