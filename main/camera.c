@@ -54,6 +54,10 @@ static void apply_auto_adjustments(void)
     s->set_awb_gain(s, 1);
     s->set_wb_mode(s, 0);  /* 0 = auto */
 
+    /* Flip 180° for upside-down mounting */
+    s->set_vflip(s, 1);
+    s->set_hmirror(s, 1);
+
     /* Image quality corrections */
     s->set_bpc(s, 1);      /* black pixel correction */
     s->set_wpc(s, 1);      /* white pixel correction */
