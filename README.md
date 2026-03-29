@@ -20,6 +20,7 @@ An ESP32-CAM based IP webcam for monitoring a rabbit hutch, built in C using ESP
 - Flash LED is on GPIO 4 -- not used; would disturb the rabbits
 - Ribbon cable between OV2640 and ESP32-CAM board is fragile -- ensure it is fully seated
 - IR illuminator is a future option for night vision (rabbits cannot see above ~700nm)
+- Camera is mounted upside-down -- OV2640 is configured with vflip + hmirror to correct
 
 ---
 
@@ -71,6 +72,8 @@ bunny-cam/
     camera.c / camera.h  -- OV2640 init, auto-adjustment, warmup
     http.c / http.h      -- HTTP server, GET /image, GET /status
     upload.c / upload.h  -- two-step S3 upload (presigned URL)
+    sntp_sync.c / .h     -- SNTP time sync with NVS fallback
+    suntime.c / .h       -- sunrise/sunset table for Newbury, UK
     Kconfig.projbuild    -- menuconfig entries (WiFi SSID/password, upload secret)
     idf_component.yml    -- component manager dependencies
     CMakeLists.txt
@@ -101,6 +104,7 @@ Built into ESP-IDF (no manifest entry needed):
 - `esp_wifi` -- WiFi stack
 - `nvs_flash` -- non-volatile storage
 - `esp_http_client` -- outbound HTTPS for upload
+- `esp_netif_sntp` -- SNTP time sync
 - `cJSON` -- JSON for status endpoint
 
 ---
@@ -148,20 +152,37 @@ See `../webcam/README.md` for the full API specification.
 The device uses deep sleep between uploads to save power.
 
 ```
-wake -> camera init (300ms warmup) -> WiFi connect -> capture -> upload
+wake -> camera init (300ms warmup) -> WiFi connect -> SNTP sync
+     -> capture -> upload
      -> HTTP server starts (brief awake window)
-     -> if no API hit within 10s: deep sleep for 20s
+     -> if no API hit within 10s: deep sleep (duration depends on time of day)
      -> if API hit: stay awake until 120s of inactivity, then sleep
 ```
 
-Total cycle time is approximately 30s. Reset code `rst:0x5` in boot log is normal
-(deep sleep wake); it is not a crash.
+Total cycle time is approximately 30s during the day. Reset code `rst:0x5` in boot
+log is normal (deep sleep wake); it is not a crash.
 
-Timing constants in `main.c`:
+### Sleep duration
+
+Sleep duration is determined by comparing the current UTC time against a
+sunrise/sunset table for Newbury, UK (51.4°N). Times are approximate mid-month
+values; no DST adjustment is needed as both the table and SNTP use UTC.
+
+| Condition | Sleep duration |
+|-----------|---------------|
+| Daytime (sun up) | 20s |
+| Night-time (sun down) | 30 min |
+
+The current time is fetched via SNTP on every wake cycle and saved to NVS. If SNTP
+fails, the last saved timestamp is used as a fallback so the sleep logic still
+operates correctly.
+
+### Timing constants in `main.c`
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| `SLEEP_DURATION_US` | 20s | Deep sleep duration |
+| `SLEEP_DURATION_DAY_US` | 20s | Deep sleep duration during daylight |
+| `SLEEP_DURATION_NIGHT_US` | 30 min | Deep sleep duration at night |
 | `BRIEF_AWAKE_WINDOW_US` | 10s | Minimum awake time after upload |
 | `API_ACTIVE_WINDOW_US` | 120s | Stay-awake window after last API hit |
 | `UPLOAD_INTERVAL_US` | 30s | Upload interval while awake |
@@ -177,6 +198,7 @@ OV2640 is configured with full automatic adjustment on boot (`camera.c`):
 - Auto white balance
 - Black/white pixel correction, gamma correction, lens correction
 - 3 warmup frames discarded on boot to let AE settle
+- vflip + hmirror enabled to correct for upside-down mounting
 
 ---
 

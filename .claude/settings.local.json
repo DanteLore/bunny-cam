@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:docs.espressif.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(find /c/Users/dan/Development/bunny-cam -type f -name *sntp*)",
+      "Bash(find /c/Users/dan/Development/bunny-cam/build/esp-idf -type f -name *.h -path */include/*)",
+      "Bash(grep -r esp_netif_sntp /c/Users/dan/Development/bunny-cam/build/esp-idf --include=*.c)",
+      "Bash(xargs cat:*)"
     ]
   }
 }

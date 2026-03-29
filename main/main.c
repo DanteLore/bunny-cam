@@ -13,8 +13,11 @@
 #include "led.h"
 #include "upload.h"
 #include "wifi.h"
+#include "sntp_sync.h"
+#include "suntime.h"
 
-#define SLEEP_DURATION_US       (20LL * 1000000)
+#define SLEEP_DURATION_DAY_US   (20LL  * 1000000)
+#define SLEEP_DURATION_NIGHT_US (30LL  * 60 * 1000000)
 #define UPLOAD_INTERVAL_US      (30LL * 1000000)
 #define BRIEF_AWAKE_WINDOW_US   (10LL * 1000000)
 #define API_ACTIVE_WINDOW_US    (120LL * 1000000)
@@ -63,6 +66,8 @@ void app_main(void)
     wifi_init();
     wifi_connect();
 
+    time_t now = sntp_sync();
+
     ESP_ERROR_CHECK(mdns_init());
     mdns_hostname_set("bunny-cam");
     mdns_instance_name_set("Bunny Cam");
@@ -87,6 +92,9 @@ void app_main(void)
 
     led_off();
     wifi_disconnect();
-    ESP_LOGI(TAG, "Going to sleep for %llds", SLEEP_DURATION_US / 1000000);
-    esp_deep_sleep(SLEEP_DURATION_US);
+
+    int64_t sleep_us = suntime_is_daytime(now) ? SLEEP_DURATION_DAY_US : SLEEP_DURATION_NIGHT_US;
+    ESP_LOGI(TAG, "Going to sleep for %llds (%s)", sleep_us / 1000000,
+             suntime_is_daytime(now) ? "daytime" : "night");
+    esp_deep_sleep(sleep_us);
 }
